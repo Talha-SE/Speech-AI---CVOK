@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
 from models.speech_processor import SpeechProcessor
 import logging
+import base64
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -45,15 +46,28 @@ def setup_socketio(app):
         try:
             logger.info(f"Received audio chunk")
             
-            # Get raw audio data directly (no base64 decoding needed)
+            # Get audio data and handle different formats
             audio_data = data.get('audio')
             if not audio_data:
+                logger.warning("No audio data in chunk")
                 return
             
-            logger.info(f"Processing audio data size: {len(audio_data)} bytes")
+            # Convert audio data to bytes if it's a string (base64 encoded)
+            if isinstance(audio_data, str):
+                try:
+                    # Decode base64 string to bytes
+                    audio_bytes = base64.b64decode(audio_data)
+                    logger.info(f"Decoded base64 audio data: {len(audio_bytes)} bytes")
+                except Exception as e:
+                    logger.error(f"Base64 decode error: {e}")
+                    return
+            else:
+                # Already bytes
+                audio_bytes = audio_data
+                logger.info(f"Raw audio data: {len(audio_bytes)} bytes")
             
-            # Process with VOSK directly
-            transcription = speech_processor.transcribe_live_chunk(audio_data)
+            # Process with VOSK
+            transcription = speech_processor.transcribe_live_chunk(audio_bytes)
             
             if transcription and transcription.strip():
                 logger.info(f"Sending transcription: '{transcription}'")
@@ -68,7 +82,7 @@ def setup_socketio(app):
     @socketio.on('connect')
     def handle_connect():
         logger.info("Client connected")
-        emit('status', {'message': 'Connected to VOSK transcription service'})
+        emit('status', {'message': 'Connected to VOSK medium model transcription service'})
     
     @socketio.on('disconnect')
     def handle_disconnect():
