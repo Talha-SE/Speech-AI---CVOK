@@ -1,0 +1,19 @@
+environment: python
+name: speech-to-text-api
+buildCommand: |
+  pip install --upgrade pip
+  pip install -r requirements.txt
+startCommand: gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT wsgi:app
+autoDeploy: true
+services:
+  - type: web
+    name: speech-to-text-api
+    env: python
+    plan: free
+    buildCommand: python file_check.py && pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:$PORT wsgi:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.16
+      - key: SECRET_KEY
+        value: sk_live_8f7e6d5c4b3a2918765432109876abcdef1234567890fedcba0987654321
