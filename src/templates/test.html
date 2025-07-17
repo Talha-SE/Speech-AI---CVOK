@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Speech to Text Test</title>
+    <title>Live Speech to Text - VOSK</title>
     <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
     <style>
         body {
@@ -96,7 +96,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎤 Live Speech to Text Test</h1>
+        <h1>🎤 Live Speech to Text - VOSK Large Model</h1>
         
         <div class="status" id="status">
             Connecting to server...
@@ -127,7 +127,6 @@
     <script>
         const socket = io();
         let mediaRecorder;
-        let audioChunks = [];
         let isRecording = false;
         let chunkCount = 0;
         let fullTranscription = "";
@@ -149,29 +148,26 @@
 
         // Socket events
         socket.on('connect', () => {
-            status.textContent = 'Connected to server ✅';
+            status.textContent = 'Connected to VOSK ✅';
             status.className = 'status connected';
-            addDebug('WebSocket connected successfully');
+            addDebug('Connected to VOSK transcription service');
         });
 
         socket.on('disconnect', () => {
-            status.textContent = 'Disconnected from server ❌';
+            status.textContent = 'Disconnected ❌';
             status.className = 'status disconnected';
-            addDebug('WebSocket disconnected');
+            addDebug('Disconnected from server');
         });
 
         socket.on('transcription', (data) => {
-            addDebug(`Received transcription: "${data.text}"`);
+            addDebug(`Received: "${data.text}"`);
             if (data.text.trim()) {
-                // Add the new text to the full transcription
                 if (fullTranscription === "" || transcription.textContent.includes('Click "Start Recording"')) {
                     fullTranscription = data.text;
                 } else {
                     fullTranscription += " " + data.text;
                 }
                 transcription.textContent = fullTranscription;
-                
-                // Auto-scroll to bottom
                 transcription.scrollTop = transcription.scrollHeight;
             }
         });
@@ -189,65 +185,43 @@
         // Audio recording
         startBtn.addEventListener('click', async () => {
             try {
-                addDebug('Requesting microphone access...');
+                addDebug('Requesting microphone...');
                 
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
-                        sampleRate: 48000,  // Higher sample rate for better quality
+                        sampleRate: 16000,  // Match VOSK requirement
                         channelCount: 1,
                         echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
+                        noiseSuppression: true
                     } 
                 });
                 
-                addDebug('Microphone access granted');
+                addDebug('Microphone granted');
                 
-                // Use the best supported format
-                let mimeType = 'audio/webm;codecs=opus';
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'audio/webm';
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'audio/mp4';
-                        if (!MediaRecorder.isTypeSupported(mimeType)) {
-                            mimeType = '';
-                        }
-                    }
-                }
-                
-                addDebug(`Using MIME type: ${mimeType || 'default'}`);
-                
-                mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+                mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'audio/webm;codecs=opus'
+                });
 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
                         chunkCount++;
-                        addDebug(`Processing audio chunk #${chunkCount}, size: ${event.data.size} bytes`);
+                        addDebug(`Chunk #${chunkCount}, size: ${event.data.size} bytes`);
                         
-                        // Send audio chunk immediately for live processing
+                        // Send raw audio data directly
                         const reader = new FileReader();
                         reader.onload = () => {
                             const arrayBuffer = reader.result;
-                            const base64Audio = btoa(
-                                new Uint8Array(arrayBuffer)
-                                    .reduce((data, byte) => data + String.fromCharCode(byte), '')
-                            );
-                            
-                            addDebug(`Sending base64 audio chunk, length: ${base64Audio.length}`);
-                            socket.emit('audio_chunk', { audio: base64Audio });
+                            addDebug(`Sending audio data: ${arrayBuffer.byteLength} bytes`);
+                            socket.emit('audio_chunk', { audio: arrayBuffer });
                         };
                         reader.readAsArrayBuffer(event.data);
                     }
                 };
 
-                mediaRecorder.onerror = (event) => {
-                    addDebug(`MediaRecorder error: ${event.error}`);
-                };
-
-                mediaRecorder.start(4000); // Capture 4-second chunks for better speech recognition
+                mediaRecorder.start(3000); // 3-second chunks
                 isRecording = true;
                 chunkCount = 0;
-                fullTranscription = ""; // Reset transcription
+                fullTranscription = "";
                 
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
@@ -255,15 +229,41 @@
                 startBtn.classList.add('recording');
                 recordingIndicator.style.display = 'block';
                 
-                addDebug('Recording started with 4-second chunks');
+                addDebug('Recording started with VOSK large model');
 
             } catch (err) {
-                addDebug(`Error accessing microphone: ${err.message}`);
-                alert('Error accessing microphone. Please ensure you have granted permission and are using HTTPS.');
+                addDebug(`Microphone error: ${err.message}`);
+                alert('Microphone access required. Please allow and use HTTPS.');
             }
         });
 
         stopBtn.addEventListener('click', () => {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+                
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                startBtn.textContent = 'Start Recording';
+                startBtn.classList.remove('recording');
+                recordingIndicator.style.display = 'none';
+                
+                addDebug('Recording stopped');
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            transcription.innerHTML = '<em>Click "Start Recording" and begin speaking...</em>';
+            debug.innerHTML = 'Debug information will appear here...';
+            fullTranscription = "";
+            addDebug('Interface cleared');
+        });
+
+        addDebug('Page loaded, ready for VOSK transcription');
+    </script>
+</body>
+</html>
             if (mediaRecorder && isRecording) {
                 mediaRecorder.stop();
                 mediaRecorder.stream.getTracks().forEach(track => track.stop());

@@ -1,6 +1,5 @@
 import io
 from pydub import AudioSegment
-import numpy as np
 import tempfile
 import os
 import logging
@@ -17,22 +16,20 @@ class SpeechProcessor:
     def __init__(self):
         self.model = None
         self._setup_vosk_model()
-        logger.info("SpeechProcessor initialized with VOSK small English model")
+        logger.info("SpeechProcessor initialized with VOSK large English model")
 
     def _setup_vosk_model(self):
-        """Setup VOSK small English model for speech recognition"""
+        """Setup VOSK large English model for better accuracy"""
         try:
-            model_path = "/tmp/vosk-model-small"
-            # Using the smallest English model for faster deployment
-            model_url = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip"
+            model_path = "/tmp/vosk-model-large"
+            # Using larger, more accurate English model
+            model_url = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip"
             
-            # Check if model already exists
             if not os.path.exists(model_path):
-                logger.info("Downloading VOSK small English model...")
+                logger.info("Downloading VOSK large English model...")
                 
-                # Download model
                 response = requests.get(model_url, stream=True)
-                model_zip_path = "/tmp/vosk-model-small.zip"
+                model_zip_path = "/tmp/vosk-model-large.zip"
                 
                 with open(model_zip_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -40,124 +37,103 @@ class SpeechProcessor:
                 
                 logger.info("Model downloaded, extracting...")
                 
-                # Extract model
                 with zipfile.ZipFile(model_zip_path, 'r') as zip_ref:
                     zip_ref.extractall("/tmp/")
                 
-                # Rename extracted folder to standard name
-                extracted_folder = "/tmp/vosk-model-en-us-0.22-lgraph"
+                extracted_folder = "/tmp/vosk-model-en-us-0.22"
                 if os.path.exists(extracted_folder):
                     os.rename(extracted_folder, model_path)
-                    logger.info("VOSK small English model extracted successfully")
+                    logger.info("VOSK large English model extracted successfully")
                 
-                # Clean up
                 os.remove(model_zip_path)
             else:
-                logger.info("VOSK small English model already exists")
+                logger.info("VOSK large English model already exists")
             
-            # Initialize VOSK model
             self.model = vosk.Model(model_path)
-            logger.info("VOSK small English model initialized successfully")
+            logger.info("VOSK large English model initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to setup VOSK small model: {e}")
+            logger.error(f"Failed to setup VOSK model: {e}")
             self.model = None
 
     def process_audio(self, audio_data):
-        """Convert audio data to the format expected by VOSK"""
+        """Simple audio processing for VOSK"""
         try:
-            logger.info(f"Processing audio data of size: {len(audio_data)} bytes")
+            logger.info(f"Processing audio data: {len(audio_data)} bytes")
             
-            # Try to create audio segment from raw data first
+            # Save audio data to temp file for pydub processing
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
+                temp_file.write(audio_data)
+                temp_file.flush()
+                temp_file_path = temp_file.name
+            
             try:
-                audio_segment = AudioSegment(
-                    data=audio_data,
-                    sample_width=2,  # 16-bit
-                    frame_rate=48000,  # Browser default
-                    channels=1
-                )
-                logger.info("Created audio segment from raw PCM data")
-            except Exception as raw_error:
-                logger.warning(f"Raw PCM failed: {raw_error}")
+                # Load and convert audio
+                audio_segment = AudioSegment.from_file(temp_file_path)
+                logger.info(f"Loaded audio: {audio_segment.frame_rate}Hz, {audio_segment.channels} channels")
                 
-                # Fallback: try to decode as WebM
-                temp_file_path = None
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_file:
-                        temp_file.write(audio_data)
-                        temp_file.flush()
-                        temp_file_path = temp_file.name
-                    
-                    audio_segment = AudioSegment.from_file(temp_file_path, format="webm")
-                    logger.info("Successfully loaded audio as WebM")
-                    
-                except Exception as webm_error:
-                    logger.error(f"WebM processing failed: {webm_error}")
-                    raise Exception(f"Could not process audio format: {webm_error}")
-                finally:
-                    if temp_file_path and os.path.exists(temp_file_path):
-                        try:
-                            os.unlink(temp_file_path)
-                        except:
-                            pass
-            
-            # Convert to VOSK required format: 16000Hz, mono, 16-bit
-            audio_segment = audio_segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
-            
-            # Get raw audio data for VOSK
-            raw_data = audio_segment.raw_data
-            
-            logger.info(f"Processed audio for VOSK: 16000Hz, 1 channel, {len(raw_data)} bytes")
-            return raw_data
+                # Convert to VOSK format: 16000Hz, mono, 16-bit
+                audio_segment = audio_segment.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+                
+                # Get raw audio data
+                raw_data = audio_segment.raw_data
+                logger.info(f"Converted to VOSK format: {len(raw_data)} bytes")
+                
+                return raw_data
+                
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
             
         except Exception as e:
             logger.error(f"Audio processing failed: {str(e)}")
-            raise Exception(f"Audio processing failed: {str(e)}")
+            return None
 
     def transcribe_speech(self, audio_data):
-        """Transcribe speech using VOSK small English model only"""
+        """Transcribe speech using VOSK large model"""
         try:
-            if not self.model:
-                logger.error("VOSK small model not available")
+            if not self.model or not audio_data:
+                logger.error("VOSK model or audio data not available")
                 return ""
             
-            # Create recognizer for this audio chunk
+            # Create recognizer
             rec = vosk.KaldiRecognizer(self.model, 16000)
+            rec.SetWords(True)  # Enable word-level timestamps
             
-            # Process audio data with VOSK
+            # Process all audio data at once
             if rec.AcceptWaveform(audio_data):
                 result = json.loads(rec.Result())
                 text = result.get('text', '')
-                logger.info(f"VOSK small model transcription: '{text}'")
+                logger.info(f"VOSK final result: '{text}'")
                 return text.strip()
             else:
-                # Get partial result for live processing
+                # Get partial result
                 partial_result = json.loads(rec.PartialResult())
                 text = partial_result.get('partial', '')
-                if text:
-                    logger.info(f"VOSK small model partial: '{text}'")
-                    return text.strip()
-                else:
-                    return ""
+                logger.info(f"VOSK partial result: '{text}'")
+                return text.strip()
                     
         except Exception as e:
-            logger.error(f"VOSK small model transcription error: {str(e)}")
+            logger.error(f"VOSK transcription error: {str(e)}")
             return ""
 
     def transcribe_live_chunk(self, audio_chunk):
-        """Process audio chunk for live transcription using VOSK small model only"""
+        """Process audio chunk for live transcription"""
         try:
-            # Skip small chunks
-            if len(audio_chunk) < 8000:
-                logger.info(f"Skipping small audio chunk: {len(audio_chunk)} bytes")
+            if len(audio_chunk) < 10000:  # Skip very small chunks
                 return ""
             
-            logger.info(f"Processing live chunk with VOSK small model: {len(audio_chunk)} bytes")
+            logger.info(f"Processing live chunk: {len(audio_chunk)} bytes")
             processed_audio = self.process_audio(audio_chunk)
-            result = self.transcribe_speech(processed_audio)
-            logger.info(f"VOSK small model live result: '{result}'")
-            return result
+            
+            if processed_audio:
+                result = self.transcribe_speech(processed_audio)
+                logger.info(f"Live transcription: '{result}'")
+                return result
+            else:
+                return ""
             
         except Exception as e:
-            logger.error(f"Live chunk processing error: {str(e)}")
+            logger.error(f"Live chunk error: {str(e)}")
             return ""

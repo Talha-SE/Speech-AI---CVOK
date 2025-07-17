@@ -1,7 +1,6 @@
 from flask import Blueprint, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
 from models.speech_processor import SpeechProcessor
-import base64
 import logging
 
 # Set up logging
@@ -21,8 +20,11 @@ def transcribe():
     try:
         audio_data = audio_file.read()
         processed_audio = speech_processor.process_audio(audio_data)
-        transcription = speech_processor.transcribe_speech(processed_audio)
-        return jsonify({'transcription': transcription}), 200
+        if processed_audio:
+            transcription = speech_processor.transcribe_speech(processed_audio)
+            return jsonify({'transcription': transcription}), 200
+        else:
+            return jsonify({'error': 'Audio processing failed'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -41,36 +43,35 @@ def setup_socketio(app):
     @socketio.on('audio_chunk')
     def handle_audio_chunk(data):
         try:
-            logger.info(f"Received audio chunk of size: {len(data.get('audio', ''))}")
+            logger.info(f"Received audio chunk")
             
-            # Decode base64 audio data
-            audio_data = base64.b64decode(data['audio'])
-            logger.info(f"Decoded audio data size: {len(audio_data)} bytes")
-            
-            if len(audio_data) < 1000:  # Skip very small chunks
-                logger.info("Skipping small audio chunk")
+            # Get raw audio data directly (no base64 decoding needed)
+            audio_data = data.get('audio')
+            if not audio_data:
                 return
             
-            transcription = speech_processor.transcribe_live_chunk(audio_data)
-            logger.info(f"Transcription result: '{transcription}'")
+            logger.info(f"Processing audio data size: {len(audio_data)} bytes")
             
-            if transcription and transcription.strip():  # Only emit if there's actual text
+            # Process with VOSK directly
+            transcription = speech_processor.transcribe_live_chunk(audio_data)
+            
+            if transcription and transcription.strip():
+                logger.info(f"Sending transcription: '{transcription}'")
                 emit('transcription', {'text': transcription})
-                logger.info(f"Emitted transcription: {transcription}")
             else:
-                logger.info("No transcription text to emit")
+                logger.info("No transcription result")
                 
         except Exception as e:
-            logger.error(f"Error processing audio chunk: {str(e)}")
+            logger.error(f"Error processing audio: {str(e)}")
             emit('error', {'message': str(e)})
     
     @socketio.on('connect')
     def handle_connect():
-        logger.info("Client connected to WebSocket")
-        emit('status', {'message': 'Connected to live transcription service'})
+        logger.info("Client connected")
+        emit('status', {'message': 'Connected to VOSK transcription service'})
     
     @socketio.on('disconnect')
     def handle_disconnect():
-        logger.info("Client disconnected from WebSocket")
+        logger.info("Client disconnected")
     
     return socketio
