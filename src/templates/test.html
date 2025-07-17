@@ -81,6 +81,17 @@
             0%, 50% { opacity: 1; }
             51%, 100% { opacity: 0; }
         }
+        .debug {
+            background: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -106,6 +117,11 @@
         <div class="transcription" id="transcription">
             <em>Click "Start Recording" and begin speaking...</em>
         </div>
+
+        <h4>Debug Info:</h4>
+        <div class="debug" id="debug">
+            Debug information will appear here...
+        </div>
     </div>
 
     <script>
@@ -113,6 +129,7 @@
         let mediaRecorder;
         let audioChunks = [];
         let isRecording = false;
+        let chunkCount = 0;
 
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -120,19 +137,30 @@
         const status = document.getElementById('status');
         const transcription = document.getElementById('transcription');
         const recordingIndicator = document.getElementById('recordingIndicator');
+        const debug = document.getElementById('debug');
+
+        function addDebug(message) {
+            const time = new Date().toLocaleTimeString();
+            debug.innerHTML += `[${time}] ${message}<br>`;
+            debug.scrollTop = debug.scrollHeight;
+            console.log(message);
+        }
 
         // Socket events
         socket.on('connect', () => {
             status.textContent = 'Connected to server ✅';
             status.className = 'status connected';
+            addDebug('WebSocket connected successfully');
         });
 
         socket.on('disconnect', () => {
             status.textContent = 'Disconnected from server ❌';
             status.className = 'status disconnected';
+            addDebug('WebSocket disconnected');
         });
 
         socket.on('transcription', (data) => {
+            addDebug(`Received transcription: "${data.text}"`);
             if (data.text.trim()) {
                 const currentText = transcription.textContent;
                 if (currentText.includes('Click "Start Recording"')) {
@@ -144,53 +172,87 @@
         });
 
         socket.on('error', (data) => {
-            console.error('Transcription error:', data.message);
+            addDebug(`Error: ${data.message}`);
             status.textContent = 'Error: ' + data.message;
             status.className = 'status disconnected';
+        });
+
+        socket.on('status', (data) => {
+            addDebug(`Status: ${data.message}`);
         });
 
         // Audio recording
         startBtn.addEventListener('click', async () => {
             try {
+                addDebug('Requesting microphone access...');
+                
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
                         sampleRate: 16000,
                         channelCount: 1,
                         echoCancellation: true,
-                        noiseSuppression: true
+                        noiseSuppression: true,
+                        autoGainControl: true
                     } 
                 });
                 
-                mediaRecorder = new MediaRecorder(stream, {
-                    mimeType: 'audio/webm'
-                });
+                addDebug('Microphone access granted');
+                
+                // Try different MIME types for better compatibility
+                let mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/webm;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = 'audio/wav';
+                        if (!MediaRecorder.isTypeSupported(mimeType)) {
+                            mimeType = '';
+                        }
+                    }
+                }
+                
+                addDebug(`Using MIME type: ${mimeType || 'default'}`);
+                
+                mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
 
                 mediaRecorder.ondataavailable = (event) => {
                     if (event.data.size > 0) {
+                        chunkCount++;
+                        addDebug(`Processing audio chunk #${chunkCount}, size: ${event.data.size} bytes`);
+                        
                         // Send audio chunk immediately for live processing
                         const reader = new FileReader();
                         reader.onload = () => {
+                            const arrayBuffer = reader.result;
                             const base64Audio = btoa(
-                                new Uint8Array(reader.result)
+                                new Uint8Array(arrayBuffer)
                                     .reduce((data, byte) => data + String.fromCharCode(byte), '')
                             );
+                            
+                            addDebug(`Sending base64 audio chunk, length: ${base64Audio.length}`);
                             socket.emit('audio_chunk', { audio: base64Audio });
                         };
                         reader.readAsArrayBuffer(event.data);
                     }
                 };
 
-                mediaRecorder.start(2000); // Capture 2-second chunks for better accuracy
+                mediaRecorder.onerror = (event) => {
+                    addDebug(`MediaRecorder error: ${event.error}`);
+                };
+
+                mediaRecorder.start(3000); // Capture 3-second chunks for better accuracy
                 isRecording = true;
+                chunkCount = 0;
                 
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
                 startBtn.textContent = 'Recording...';
                 startBtn.classList.add('recording');
                 recordingIndicator.style.display = 'block';
+                
+                addDebug('Recording started with 3-second chunks');
 
             } catch (err) {
-                console.error('Error accessing microphone:', err);
+                addDebug(`Error accessing microphone: ${err.message}`);
                 alert('Error accessing microphone. Please ensure you have granted permission and are using HTTPS.');
             }
         });
@@ -206,12 +268,19 @@
                 startBtn.textContent = 'Start Recording';
                 startBtn.classList.remove('recording');
                 recordingIndicator.style.display = 'none';
+                
+                addDebug('Recording stopped');
             }
         });
 
         clearBtn.addEventListener('click', () => {
             transcription.innerHTML = '<em>Click "Start Recording" and begin speaking...</em>';
+            debug.innerHTML = 'Debug information will appear here...';
+            addDebug('Interface cleared');
         });
+
+        // Test connection on page load
+        addDebug('Page loaded, testing WebSocket connection...');
     </script>
 </body>
 </html>
