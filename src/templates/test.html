@@ -130,6 +130,7 @@
         let audioChunks = [];
         let isRecording = false;
         let chunkCount = 0;
+        let fullTranscription = "";
 
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
@@ -162,12 +163,16 @@
         socket.on('transcription', (data) => {
             addDebug(`Received transcription: "${data.text}"`);
             if (data.text.trim()) {
-                const currentText = transcription.textContent;
-                if (currentText.includes('Click "Start Recording"')) {
-                    transcription.textContent = data.text;
+                // Add the new text to the full transcription
+                if (fullTranscription === "" || transcription.textContent.includes('Click "Start Recording"')) {
+                    fullTranscription = data.text;
                 } else {
-                    transcription.textContent = currentText + ' ' + data.text;
+                    fullTranscription += " " + data.text;
                 }
+                transcription.textContent = fullTranscription;
+                
+                // Auto-scroll to bottom
+                transcription.scrollTop = transcription.scrollHeight;
             }
         });
 
@@ -188,7 +193,7 @@
                 
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     audio: {
-                        sampleRate: 16000,
+                        sampleRate: 48000,  // Higher sample rate for better quality
                         channelCount: 1,
                         echoCancellation: true,
                         noiseSuppression: true,
@@ -198,12 +203,12 @@
                 
                 addDebug('Microphone access granted');
                 
-                // Try different MIME types for better compatibility
-                let mimeType = 'audio/webm';
+                // Use the best supported format
+                let mimeType = 'audio/webm;codecs=opus';
                 if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = 'audio/webm;codecs=opus';
+                    mimeType = 'audio/webm';
                     if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = 'audio/wav';
+                        mimeType = 'audio/mp4';
                         if (!MediaRecorder.isTypeSupported(mimeType)) {
                             mimeType = '';
                         }
@@ -239,9 +244,10 @@
                     addDebug(`MediaRecorder error: ${event.error}`);
                 };
 
-                mediaRecorder.start(3000); // Capture 3-second chunks for better accuracy
+                mediaRecorder.start(4000); // Capture 4-second chunks for better speech recognition
                 isRecording = true;
                 chunkCount = 0;
+                fullTranscription = ""; // Reset transcription
                 
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
@@ -249,7 +255,7 @@
                 startBtn.classList.add('recording');
                 recordingIndicator.style.display = 'block';
                 
-                addDebug('Recording started with 3-second chunks');
+                addDebug('Recording started with 4-second chunks');
 
             } catch (err) {
                 addDebug(`Error accessing microphone: ${err.message}`);
@@ -276,6 +282,7 @@
         clearBtn.addEventListener('click', () => {
             transcription.innerHTML = '<em>Click "Start Recording" and begin speaking...</em>';
             debug.innerHTML = 'Debug information will appear here...';
+            fullTranscription = "";
             addDebug('Interface cleared');
         });
 
