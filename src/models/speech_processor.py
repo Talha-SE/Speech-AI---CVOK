@@ -16,44 +16,46 @@ class SpeechProcessor:
     def __init__(self):
         self.model = None
         self._setup_vosk_model()
-        logger.info("SpeechProcessor initialized with VOSK large English model")
+        logger.info("SpeechProcessor initialized with VOSK medium English model")
 
     def _setup_vosk_model(self):
-        """Setup VOSK large English model for better accuracy"""
+        """Setup VOSK medium English model (~128MB)"""
         try:
-            model_path = "/tmp/vosk-model-large"
-            # Using larger, more accurate English model
-            model_url = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22.zip"
+            model_path = "/tmp/vosk-model-medium"
+            
+            # Using medium model for better accuracy and reasonable size
+            model_url = "https://alphacephei.com/vosk/models/vosk-model-en-us-0.22-lgraph.zip"
             
             if not os.path.exists(model_path):
-                logger.info("Downloading VOSK large English model...")
+                logger.info("Downloading VOSK medium English model (~128MB)...")
                 
                 response = requests.get(model_url, stream=True)
-                model_zip_path = "/tmp/vosk-model-large.zip"
+                model_zip_path = "/tmp/vosk-model-medium.zip"
                 
                 with open(model_zip_path, 'wb') as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
-                logger.info("Model downloaded, extracting...")
+                logger.info("Medium model downloaded, extracting...")
                 
                 with zipfile.ZipFile(model_zip_path, 'r') as zip_ref:
                     zip_ref.extractall("/tmp/")
                 
-                extracted_folder = "/tmp/vosk-model-en-us-0.22"
+                # The medium model extracts to this folder name
+                extracted_folder = "/tmp/vosk-model-en-us-0.22-lgraph"
                 if os.path.exists(extracted_folder):
                     os.rename(extracted_folder, model_path)
-                    logger.info("VOSK large English model extracted successfully")
+                    logger.info("VOSK medium English model (128MB) extracted successfully")
                 
                 os.remove(model_zip_path)
             else:
-                logger.info("VOSK large English model already exists")
+                logger.info("VOSK medium English model already exists")
             
             self.model = vosk.Model(model_path)
-            logger.info("VOSK large English model initialized successfully")
+            logger.info("VOSK medium English model initialized successfully")
             
         except Exception as e:
-            logger.error(f"Failed to setup VOSK model: {e}")
+            logger.error(f"Failed to setup VOSK medium model: {e}")
             self.model = None
 
     def process_audio(self, audio_data):
@@ -91,10 +93,10 @@ class SpeechProcessor:
             return None
 
     def transcribe_speech(self, audio_data):
-        """Transcribe speech using VOSK large model"""
+        """Transcribe speech using VOSK medium model"""
         try:
             if not self.model or not audio_data:
-                logger.error("VOSK model or audio data not available")
+                logger.error("VOSK medium model or audio data not available")
                 return ""
             
             # Create recognizer
@@ -105,35 +107,35 @@ class SpeechProcessor:
             if rec.AcceptWaveform(audio_data):
                 result = json.loads(rec.Result())
                 text = result.get('text', '')
-                logger.info(f"VOSK final result: '{text}'")
+                logger.info(f"VOSK medium model final result: '{text}'")
                 return text.strip()
             else:
                 # Get partial result
                 partial_result = json.loads(rec.PartialResult())
                 text = partial_result.get('partial', '')
-                logger.info(f"VOSK partial result: '{text}'")
+                logger.info(f"VOSK medium model partial result: '{text}'")
                 return text.strip()
                     
         except Exception as e:
-            logger.error(f"VOSK transcription error: {str(e)}")
+            logger.error(f"VOSK medium model transcription error: {str(e)}")
             return ""
 
     def transcribe_live_chunk(self, audio_chunk):
-        """Process audio chunk for live transcription"""
+        """Process audio chunk for live transcription using medium model"""
         try:
             if len(audio_chunk) < 10000:  # Skip very small chunks
                 return ""
             
-            logger.info(f"Processing live chunk: {len(audio_chunk)} bytes")
+            logger.info(f"Processing live chunk with medium model: {len(audio_chunk)} bytes")
             processed_audio = self.process_audio(audio_chunk)
             
             if processed_audio:
                 result = self.transcribe_speech(processed_audio)
-                logger.info(f"Live transcription: '{result}'")
+                logger.info(f"Medium model live transcription: '{result}'")
                 return result
             else:
                 return ""
             
         except Exception as e:
-            logger.error(f"Live chunk error: {str(e)}")
+            logger.error(f"Medium model live chunk error: {str(e)}")
             return ""

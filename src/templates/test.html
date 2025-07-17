@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Speech to Text - VOSK</title>
+    <title>Live Speech to Text - VOSK Medium</title>
     <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
     <style>
         body {
@@ -96,7 +96,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>🎤 Live Speech to Text - VOSK Large Model</h1>
+        <h1>🎤 Live Speech to Text - VOSK Medium Model</h1>
         
         <div class="status" id="status">
             Connecting to server...
@@ -229,7 +229,7 @@
                 startBtn.classList.add('recording');
                 recordingIndicator.style.display = 'block';
                 
-                addDebug('Recording started with VOSK large model');
+                addDebug('Recording started with VOSK medium model');
 
             } catch (err) {
                 addDebug(`Microphone error: ${err.message}`);
@@ -260,7 +260,7 @@
             addDebug('Interface cleared');
         });
 
-        addDebug('Page loaded, ready for VOSK transcription');
+        addDebug('Page loaded, ready for VOSK medium model transcription');
     </script>
 </body>
 </html>
